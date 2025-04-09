@@ -1,0 +1,35 @@
+stages:
+  - build
+  - test
+  - deploy
+
+# ใช้ Docker Compose ในขั้นตอน build
+build:
+  stage: build
+  image: docker:20.10.7 # ใช้ image Docker สำหรับการสร้าง container
+  services:
+    - docker:20.10.7-dind # ใช้ Docker-in-Docker สำหรับรัน container ภายใน pipeline
+  before_script:
+    - apk add --no-cache py3-pip
+    - pip install docker-compose # ติดตั้ง docker-compose
+  script:
+    - docker-compose -f docker-compose.yml up -d # รัน docker-compose เพื่อสร้าง container
+
+# ทดสอบ container ที่รันจาก Docker Compose
+test:
+  stage: test
+  image: docker:20.10.7
+  services:
+    - docker:20.10.7-dind
+  script:
+    - docker-compose -f docker-compose.yml exec <service_name> /bin/sh -c "python -m unittest discover tests" # ทดสอบระบบ
+
+# การ deploy container ใน production
+deploy:
+  stage: deploy
+  script:
+    - docker-compose -f docker-compose.yml up -d # รัน docker-compose เพื่อ deploy
+    - kubectl config use-context gistda-platform-dev-cluster # Select K8S Cluster
+    - kubectl set image deployment/{tawatchai-airflow} {tawatchai-airflow}="${HARBOR_HOST}/${HARBOR_PROJECT}/${CI_PROJECT_NAME}/${BRANCH}:$git_Build_id" --namespace={lab-project}
+  only:
+    - dev # รัน deploy เมื่อมีการ merge เข้าสู่ master branch
